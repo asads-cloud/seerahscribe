@@ -1,0 +1,56 @@
+name: Build FFmpeg Lambda Layer
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_to_aws:
+        description: "Also publish the layer to AWS?"
+        type: boolean
+        default: false
+      layer_name:
+        description: "Lambda layer name (if publishing)"
+        type: string
+        default: "ffmpeg-ffprobe"
+      aws_region:
+        description: "AWS region (if publishing)"
+        type: string
+        default: "eu-west-1"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # for OIDC if publishing
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch static FFmpeg + FFprobe
+        run: |
+          set -euo pipefail
+          URL="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+          curl -fsSLo ffmpeg.tar.xz --retry 5 --retry-delay 5 --connect-timeout 30 --max-time 300 "$URL"
+          FOLDER="$(tar -tf ffmpeg.tar.xz | head -1 | cut -d/ -f1)"
+          tar -xJf ffmpeg.tar.xz
+          mkdir -p layer/bin
+          cp "$FOLDER/ffmpeg" "$FOLDER/ffprobe" layer/bin/
+          chmod +x layer/bin/ffmpeg layer/bin/ffprobe
+
+      - name: Smoke test (versions)
+        run: |
+          ./layer/bin/ffmpeg -version | head -n 1
+          ./layer/bin/ffprobe -version | head -n 1
+
+      - name: Zip layer (root must contain bin/)
+        run: |
+          cd layer
+          zip -r9 ../ffmpeg-layer.zip .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-layer
+          path: ffmpeg-layer.zip
+          if-no-files-found: error
