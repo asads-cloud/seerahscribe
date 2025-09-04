@@ -1,0 +1,9 @@
+﻿.git
+.gitignore
+.vscode
+__pycache__/
+**/*.pyc
+.env
+artifacts/
+terraform/.terraform/
+terraform/*.tfstate*
