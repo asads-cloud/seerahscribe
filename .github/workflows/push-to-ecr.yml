@@ -1,18 +1,19 @@
-name: Build & Push to ECR
+name: Build & push Docker image to ECR (OIDC)
 
 on:
   push:
-    branches: [ "main" ] 
-  workflow_dispatch:
+    branches: [ main ]
+    paths:
+      - "docker/**"
+      - ".github/workflows/push-to-ecr.yml"
 
 permissions:
-  id-token: write   # required for OIDC
+  id-token: write        # required for OIDC
   contents: read
 
 env:
   AWS_REGION: eu-west-1
   ECR_REPO: whisper-faster
-  DOCKERFILE: docker/whisper-worker/Dockerfile
 
 jobs:
   build-and-push:
@@ -22,37 +23,42 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials (OIDC)
+      - name: Configure AWS (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::155186308102:role/GitHubActionsECRPush
           aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: arn:aws:iam::155186308102:role/GitHubActionsECRPush
 
-      - name: Build & Push
+      - name: Resolve ECR URI
+        id: ecr
         shell: bash
         run: |
-          set -euxo pipefail
-
-          # identity sanity check
-          aws sts get-caller-identity
-
+          set -euo pipefail
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-          ECR_URI="${REGISTRY}/${ECR_REPO}"
-          echo "ECR_URI=$ECR_URI"
+          echo "ACCOUNT_ID=$ACCOUNT_ID" >> $GITHUB_ENV
+          echo "ECR_URI=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}" >> $GITHUB_ENV
+          echo "ECR registry: ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          echo "Full repo URI: ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}"
 
-          # optional: ensure the repo exists (requires ecr:CreateRepository)
-          aws ecr describe-repositories --repository-names "${ECR_REPO}" \
-            || aws ecr create-repository --repository-name "${ECR_REPO}"
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | docker login --username AWS --password-stdin "${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
-          # login to ecr
-          aws ecr get-login-password --region "${AWS_REGION}" \
-            | docker login --username AWS --password-stdin "${REGISTRY}"
+      - name: Build image
+        run: |
+          docker build \
+            -t ${ECR_REPO}:dev \
+            -f docker/whisper-worker/Dockerfile \
+            .
 
-          # build (fails immediately if the path is wrong)
-          test -f "${DOCKERFILE}"
-          docker build -t app -f "${DOCKERFILE}" .
-
-          # tag + push
-          docker tag app:latest "${ECR_URI}:latest"
+      - name: Tag & push :latest
+        run: |
+          docker tag ${ECR_REPO}:dev "${ECR_URI}:latest"
           docker push "${ECR_URI}:latest"
+
+      - name: Show pushed image
+        run: |
+          aws ecr describe-images --repository-name "$ECR_REPO" \
+            --query 'imageDetails[?contains(imageTags, `latest`)] | [0].imageDigest' \
+            --output text
