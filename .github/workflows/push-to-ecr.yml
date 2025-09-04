@@ -1,19 +1,18 @@
 name: Build & Push to ECR
 
 on:
-  # run when you push to main
   push:
-    branches: [ "main" ]
-  # allow manual runs too
+    branches: [ "main" ] 
   workflow_dispatch:
 
 permissions:
-  id-token: write     # required for OIDC
-  contents: read      # checkout
+  id-token: write   # required for OIDC
+  contents: read
 
 env:
   AWS_REGION: eu-west-1
-  ECR_REPOSITORY: whisper-faster  # the aws ecr thingy
+  ECR_REPO: whisper-faster
+  DOCKERFILE: docker/whisper-worker/Dockerfile
 
 jobs:
   build-and-push:
@@ -23,46 +22,37 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 1) Assume your IAM role via OIDC
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::155186308102:role/GitHubActionsECRPush
           aws-region: ${{ env.AWS_REGION }}
 
-      # 2) Compute account id and full ECR URI
-      - name: Get AWS account ID
-        id: acct
+      - name: Build & Push
+        shell: bash
         run: |
-          echo "id=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_OUTPUT
+          set -euxo pipefail
 
-      - name: Set ECR URI
-        id: ecr
-        run: |
-          echo "uri=${{ steps.acct.outputs.id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}" >> $GITHUB_OUTPUT
+          # identity sanity check
+          aws sts get-caller-identity
 
-      # 3) Login to ECR
-      - name: Login to Amazon ECR
-        run: |
-          aws ecr get-login-password --region "${{ env.AWS_REGION }}" \
-          | docker login --username AWS --password-stdin "${{ steps.ecr.outputs.uri }}"
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          ECR_URI="${REGISTRY}/${ECR_REPO}"
+          echo "ECR_URI=$ECR_URI"
 
-      # 4) Build image (small, deterministic context thanks to .dockerignore)
-      - name: Build Docker image
-        run: |
-          docker build \
-            -t app:build \
-            -f docker/whisper-worker/Dockerfile \
-            .
+          # optional: ensure the repo exists (requires ecr:CreateRepository)
+          aws ecr describe-repositories --repository-names "${ECR_REPO}" \
+            || aws ecr create-repository --repository-name "${ECR_REPO}"
 
-      # 5) Tag with 'latest' and the commit SHA (best practice: unique + floating tag)
-      - name: Tag image
-        run: |
-          docker tag app:build "${{ steps.ecr.outputs.uri }}:latest"
-          docker tag app:build "${{ steps.ecr.outputs.uri }}:${{ github.sha }}"
+          # login to ecr
+          aws ecr get-login-password --region "${AWS_REGION}" \
+            | docker login --username AWS --password-stdin "${REGISTRY}"
 
-      # 6) Push both tags
-      - name: Push to ECR
-        run: |
-          docker push "${{ steps.ecr.outputs.uri }}:latest"
-          docker push "${{ steps.ecr.outputs.uri }}:${{ github.sha }}"
+          # build (fails immediately if the path is wrong)
+          test -f "${DOCKERFILE}"
+          docker build -t app -f "${DOCKERFILE}" .
+
+          # tag + push
+          docker tag app:latest "${ECR_URI}:latest"
+          docker push "${ECR_URI}:latest"
