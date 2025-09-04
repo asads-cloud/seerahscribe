@@ -31,12 +31,16 @@ jobs:
         run: |
           set -euo pipefail
           URL="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+          # Resilient download
           curl -fsSLo ffmpeg.tar.xz --retry 5 --retry-delay 5 --connect-timeout 30 --max-time 300 "$URL"
-          FOLDER="$(tar -tf ffmpeg.tar.xz | head -1 | cut -d/ -f1)"
+          # Extract, then glob for the folder name
           tar -xJf ffmpeg.tar.xz
+          FOLDER="$(ls -1d ffmpeg-*-amd64-static | head -n 1)"
+          test -d "$FOLDER"
           mkdir -p layer/bin
           cp "$FOLDER/ffmpeg" "$FOLDER/ffprobe" layer/bin/
           chmod +x layer/bin/ffmpeg layer/bin/ffprobe
+
 
       - name: Smoke test (versions)
         run: |
