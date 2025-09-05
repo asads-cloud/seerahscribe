@@ -34,4 +34,6 @@ override.tf.json
 # Local artifacts/output
 artifacts/**
 !artifacts/.gitkeep
+!artifacts/layers/
+!artifacts/layers/ffmpeg/
 !artifacts/layers/ffmpeg/Dockerfile
