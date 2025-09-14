@@ -1,0 +1,14 @@
+{
+    "phase":  4,
+    "region":  "eu-west-1",
+    "state_machine_name":  "whisper-transcribe-map",
+    "state_machine_arn":  "arn:aws:states:eu-west-1:155186308102:stateMachine:whisper-transcribe-map",
+    "step_functions_role_arn":  "arn:aws:iam::155186308102:role/whisper-transcribe-steps-role",
+    "log_group":  "/aws/vendedlogs/states/whisper-transcribe",
+    "batch_job_queue_arn":  "arn:aws:batch:eu-west-1:155186308102:job-queue/whisper-gpu-queue",
+    "batch_job_definition_arn":  "arn:aws:batch:eu-west-1:155186308102:job-definition/whisper-transcribe-job:2",
+    "results_bucket":  "seerahscribe-results-155186308102-eu-west-1",
+    "ingest_bucket":  "seerahscribe-ingest-155186308102-eu-west-1",
+    "map_max_concurrency":  10,
+    "acceptance_check_notes":  "3 jobs succeeded; out.json present for each; logs show fan-out/fan-in"
+}
