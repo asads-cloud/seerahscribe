@@ -11,6 +11,9 @@ __pycache__/
 .venv/
 venv/
 .envrc
+secrets.*
+hf_token.txt
+.env
 
 # VS Code
 .vscode/
@@ -27,9 +30,17 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 .terraform.tfstate.lock.info
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.*
+crash.log
 
 # Docker artifacts
 *.log
+overrides-*.json
+*.tmp
+*.bak
 
 # Local artifacts/output
 artifacts/**
@@ -37,3 +48,8 @@ artifacts/**
 !artifacts/layers/
 !artifacts/layers/ffmpeg/
 !artifacts/layers/ffmpeg/Dockerfile
+artifacts/overrides-*.json
+
+
+
+
