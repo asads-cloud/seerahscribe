@@ -1,5 +1,5 @@
 {
-  "Comment": "Whisper Distributed Map over manifest.jsonl -> Batch GPU jobs",
+  "Comment": "Whisper Distributed Map over manifest.jsonl -> Batch GPU jobs + final Stitcher",
   "StartAt": "FanOutTranscribes",
   "States": {
     "FanOutTranscribes": {
@@ -30,7 +30,7 @@
             "Type": "Task",
             "Resource": "arn:aws:states:::batch:submitJob.sync",
             "Parameters": {
-              "JobName.$": "States.Format('whisper-{}', $.chunk.job_id)",
+              "JobName.$": "States.Format('whisper-{}-{}', $.chunk.job_id, $.chunk.index)",
               "JobQueue": "${batch_job_queue_arn}",
               "JobDefinition": "${batch_job_definition_arn}",
               "ContainerOverrides": {
@@ -39,20 +39,19 @@
                 "Environment": [
                   { "Name": "IN_URI",  "Value.$": "$.chunk.in_uri" },
 
-                  { "Name": "OUT_URI",       "Value.$": "States.Format('s3://{}/chunks/{}/out.json', $.results_bucket, $.chunk.job_id)" },
-                  { "Name": "OUT_BUCKET",    "Value.$": "$.results_bucket" },
-                  { "Name": "OUT_PREFIX",    "Value.$": "States.Format('chunks/{}/', $.chunk.job_id)" },
-                  { "Name": "RESULTS_PREFIX","Value.$": "States.Format('chunks/{}/', $.chunk.job_id)" },
+                  { "Name": "OUT_URI",        "Value.$": "States.Format('s3://{}/chunks/{}/{}/out.json', $.results_bucket, $.chunk.job_id, $.chunk.index)" },
+                  { "Name": "OUT_BUCKET",     "Value.$": "$.results_bucket" },
+                  { "Name": "OUT_PREFIX",     "Value.$": "States.Format('chunks/{}/{}/', $.chunk.job_id, $.chunk.index)" },
+                  { "Name": "RESULTS_PREFIX", "Value.$": "States.Format('chunks/{}/{}/', $.chunk.job_id, $.chunk.index)" },
 
-                  { "Name": "MODEL",     "Value.$": "$.model" },
-                  { "Name": "LANGUAGE",  "Value.$": "$.language" },
-                  { "Name": "COMPUTE_TYPE","Value.$": "$.compute_type" },
-                  { "Name": "BEAM_SIZE", "Value.$": "States.Format('{}', $.beam_size)" },
-                  { "Name": "VAD",       "Value.$": "States.Format('{}', $.vad)" },
+                  { "Name": "MODEL",        "Value.$": "$.model" },
+                  { "Name": "LANGUAGE",     "Value.$": "$.language" },
+                  { "Name": "COMPUTE_TYPE", "Value.$": "$.compute_type" },
+                  { "Name": "BEAM_SIZE",    "Value.$": "States.Format('{}', $.beam_size)" },
+                  { "Name": "VAD",          "Value.$": "States.Format('{}', $.vad)" },
 
                   { "Name": "HF_HUB_ENABLE_HF_TRANSFER", "Value": "0" },
                   { "Name": "HF_ENDPOINT",               "Value": "https://huggingface.co" }
-
                 ]
               }
             },
@@ -61,7 +60,37 @@
           }
         }
       },
+      "ResultPath": "$.chunks",
       "Label": "Chunks",
+      "Next": "Stitcher"
+    },
+
+    "Stitcher": {
+      "Type": "Task",
+      "Comment": "Combine chunk outputs and emit final artifacts",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "${stitcher_lambda_arn}",
+        "Payload": {
+          "manifest_bucket": "${ingest_bucket_name}",
+          "results_bucket": "${results_bucket_name}",
+          "manifest_key.$": "$.manifest_key",
+          "language.$": "$.language"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2.0,
+          "MaxAttempts": 4
+        }
+      ],
       "End": true
     }
   }
